@@ -1,3 +1,5 @@
+#include "llvm_utils.h"
+#include <functional>
 #include <libasr/assert.h>
 #include <libasr/codegen/llvm_utils.h>
 #include <libasr/codegen/llvm_array_utils.h>
@@ -159,7 +161,7 @@ namespace LCompilers {
                 llvm_mem_type = getFPType(a_kind);
                 break;
             }
-            case ASR::ttypeType::Struct: {
+            case ASR::ttypeType::StructType: {
                 llvm_mem_type = getStructType(mem_type, module);
                 break;
             }
@@ -203,7 +205,7 @@ namespace LCompilers {
         return llvm_mem_type;
     }
 
-    void LLVMUtils::createStructContext(ASR::StructType_t* der_type) {
+    void LLVMUtils::createStructTypeContext(ASR::Struct_t* der_type) {
         std::string der_type_name = std::string(der_type->m_name);
         if (name2dercontext.find(der_type_name) == name2dercontext.end() ) {
             llvm::StructType* der_type_llvm = llvm::StructType::create(context,
@@ -212,24 +214,24 @@ namespace LCompilers {
                                 der_type->m_is_packed);
             name2dercontext[der_type_name] = der_type_llvm;
             if( der_type->m_parent != nullptr ) {
-                ASR::StructType_t *par_der_type = ASR::down_cast<ASR::StructType_t>(
+                ASR::Struct_t *par_der_type = ASR::down_cast<ASR::Struct_t>(
                                                 ASRUtils::symbol_get_past_external(der_type->m_parent));
-                createStructContext(par_der_type);
+                createStructTypeContext(par_der_type);
             }
             for( size_t i = 0; i < der_type->n_members; i++ ) {
                 std::string member_name = der_type->m_members[i];
                 ASR::symbol_t* sym = der_type->m_symtab->get_symbol(member_name);
-                if (ASR::is_a<ASR::StructType_t>(*sym)) {
-                    ASR::StructType_t *d_type = ASR::down_cast<ASR::StructType_t>(sym);
-                    createStructContext(d_type);
+                if (ASR::is_a<ASR::Struct_t>(*sym)) {
+                    ASR::Struct_t *d_type = ASR::down_cast<ASR::Struct_t>(sym);
+                    createStructTypeContext(d_type);
                 }
             }
         }
     }
 
-    llvm::Type* LLVMUtils::getStructType(ASR::StructType_t* der_type, llvm::Module* module, bool is_pointer) {
+    llvm::Type* LLVMUtils::getStructType(ASR::Struct_t* der_type, llvm::Module* module, bool is_pointer) {
         std::string der_type_name = std::string(der_type->m_name);
-        createStructContext(der_type);
+        createStructTypeContext(der_type);
         if (std::find(struct_type_stack.begin(), struct_type_stack.end(),
                         der_type_name) != struct_type_stack.end()) {
             LCOMPILERS_ASSERT(name2dercontext.find(der_type_name) != name2dercontext.end());
@@ -244,7 +246,7 @@ namespace LCompilers {
             std::vector<llvm::Type*> member_types;
             int member_idx = 0;
             if( der_type->m_parent != nullptr ) {
-                ASR::StructType_t *par_der_type = ASR::down_cast<ASR::StructType_t>(
+                ASR::Struct_t *par_der_type = ASR::down_cast<ASR::Struct_t>(
                                                         ASRUtils::symbol_get_past_external(der_type->m_parent));
                 llvm::Type* par_llvm = getStructType(par_der_type, module);
                 member_types.push_back(par_llvm);
@@ -270,15 +272,15 @@ namespace LCompilers {
     }
 
     llvm::Type* LLVMUtils::getStructType(ASR::ttype_t* _type, llvm::Module* module, bool is_pointer) {
-        ASR::StructType_t* der_type;
-        if( ASR::is_a<ASR::Struct_t>(*_type) ) {
-            ASR::Struct_t* der = ASR::down_cast<ASR::Struct_t>(_type);
+        ASR::Struct_t* der_type;
+        if( ASR::is_a<ASR::StructType_t>(*_type) ) {
+            ASR::StructType_t* der = ASR::down_cast<ASR::StructType_t>(_type);
             ASR::symbol_t* der_sym = ASRUtils::symbol_get_past_external(der->m_derived_type);
-            der_type = ASR::down_cast<ASR::StructType_t>(der_sym);
+            der_type = ASR::down_cast<ASR::Struct_t>(der_sym);
         } else if( ASR::is_a<ASR::Class_t>(*_type) ) {
             ASR::Class_t* der = ASR::down_cast<ASR::Class_t>(_type);
             ASR::symbol_t* der_sym = ASRUtils::symbol_get_past_external(der->m_class_type);
-            der_type = ASR::down_cast<ASR::StructType_t>(der_sym);
+            der_type = ASR::down_cast<ASR::Struct_t>(der_sym);
         } else {
             LCOMPILERS_ASSERT(false);
             return nullptr; // silence a warning
@@ -373,7 +375,7 @@ namespace LCompilers {
         return (llvm::Type*) der_type_llvm;
     }
 
-    llvm::Type* LLVMUtils::getClassType(ASR::StructType_t* der_type, bool is_pointer) {
+    llvm::Type* LLVMUtils::getClassType(ASR::Struct_t* der_type, bool is_pointer) {
         std::string der_type_name = std::string(der_type->m_name) + std::string("_polymorphic");
         llvm::StructType* der_type_llvm = nullptr;
         if( name2dertype.find(der_type_name) != name2dertype.end() ) {
@@ -402,8 +404,8 @@ namespace LCompilers {
             } else if( ASR::is_a<ASR::ClassType_t>(*der_sym) ) {
                 ASR::ClassType_t* class_type_t = ASR::down_cast<ASR::ClassType_t>(der_sym);
                 member_types.push_back(getClassType(class_type_t, is_pointer));
-            } else if( ASR::is_a<ASR::StructType_t>(*der_sym) ) {
-                ASR::StructType_t* struct_type_t = ASR::down_cast<ASR::StructType_t>(der_sym);
+            } else if( ASR::is_a<ASR::Struct_t>(*der_sym) ) {
+                ASR::Struct_t* struct_type_t = ASR::down_cast<ASR::Struct_t>(der_sym);
                 member_types.push_back(getStructType(struct_type_t, module, is_pointer));
             }
             der_type_llvm = llvm::StructType::create(context, member_types, der_type_name);
@@ -491,7 +493,7 @@ namespace LCompilers {
                 el_type = llvm::Type::getInt1Ty(context);
                 break;
             }
-            case ASR::ttypeType::Struct: {
+            case ASR::ttypeType::StructType: {
                 el_type = getStructType(m_type_, module);
                 break;
             }
@@ -762,7 +764,7 @@ namespace LCompilers {
                 }
                 break;
             }
-            case (ASR::ttypeType::Struct) : {
+            case (ASR::ttypeType::StructType) : {
                 type = getStructType(asr_type, module, true);
                 break;
             }
@@ -1018,7 +1020,7 @@ namespace LCompilers {
                     return_type = get_type_from_ttype_t_util(ASRUtils::get_contained_type(return_var_type0), module);
                     break;
                 }
-                case (ASR::ttypeType::Struct) :
+                case (ASR::ttypeType::StructType) :
                     throw CodeGenError("Struct return type not implemented yet");
                     break;
                 case (ASR::ttypeType::Tuple) : {
@@ -1216,7 +1218,7 @@ namespace LCompilers {
                     return_type = get_type_from_ttype_t_util(ASRUtils::get_contained_type(return_var_type0), module);
                     break;
                 }
-                case (ASR::ttypeType::Struct) :
+                case (ASR::ttypeType::StructType) :
                     throw CodeGenError("Struct return type not implemented yet");
                     break;
                 case (ASR::ttypeType::Tuple) : {
@@ -1426,7 +1428,7 @@ namespace LCompilers {
                 llvm_type = llvm::Type::getInt1Ty(context);
                 break;
             }
-            case (ASR::ttypeType::Struct) : {
+            case (ASR::ttypeType::StructType) : {
                 llvm_type = getStructType(asr_type, module, false);
                 break;
             }
@@ -1945,15 +1947,21 @@ namespace LCompilers {
                 dict_api->dict_deepcopy(src, dest, dict_type, module, name2memidx);
                 break ;
             }
-            case ASR::ttypeType::Struct: {
-                ASR::Struct_t* struct_t = ASR::down_cast<ASR::Struct_t>(asr_type);
-                ASR::StructType_t* struct_type_t = ASR::down_cast<ASR::StructType_t>(
+            case ASR::ttypeType::Set: {
+                ASR::Set_t *set_type = ASR::down_cast<ASR::Set_t>(asr_type);
+                set_api->set_deepcopy(src, dest, set_type, module, name2memidx);
+                break;
+            }
+            case ASR::ttypeType::StructType: {
+                ASR::StructType_t* struct_t = ASR::down_cast<ASR::StructType_t>(asr_type);
+                ASR::Struct_t* struct_type_t = ASR::down_cast<ASR::Struct_t>(
                     ASRUtils::symbol_get_past_external(struct_t->m_derived_type));
                 std::string der_type_name = std::string(struct_type_t->m_name);
                 while( struct_type_t != nullptr ) {
                     for( auto item: struct_type_t->m_symtab->get_scope() ) {
                         if( ASR::is_a<ASR::ClassProcedure_t>(*item.second) ||
-                            ASR::is_a<ASR::CustomOperator_t>(*item.second) ) {
+                            ASR::is_a<ASR::CustomOperator_t>(*item.second) ||
+                            ASR::is_a<ASR::Function_t>(*item.second) ) {
                             continue ;
                         }
                         std::string mem_name = item.first;
@@ -1969,8 +1977,8 @@ namespace LCompilers {
                             module, name2memidx);
                     }
                     if( struct_type_t->m_parent != nullptr ) {
-                        ASR::StructType_t* parent_struct_type_t =
-                            ASR::down_cast<ASR::StructType_t>(struct_type_t->m_parent);
+                        ASR::Struct_t* parent_struct_type_t =
+                            ASR::down_cast<ASR::Struct_t>(struct_type_t->m_parent);
                         struct_type_t = parent_struct_type_t;
                     } else {
                         struct_type_t = nullptr;
@@ -1982,6 +1990,53 @@ namespace LCompilers {
                 throw LCompilersException("LLVMUtils::deepcopy isn't implemented for " +
                                           ASRUtils::type_to_str(asr_type));
             }
+        }
+    }
+
+    void LLVMUtils::free_data(llvm::Value* src, ASR::ttype_t* asr_type, llvm::Module* module) {
+        switch( ASRUtils::type_get_past_array(asr_type)->type ) {
+            // TODO: change this if explicit freeing is required for any of the below
+            case ASR::ttypeType::Integer:
+            case ASR::ttypeType::UnsignedInteger:
+            case ASR::ttypeType::Real:
+            case ASR::ttypeType::Logical:
+            case ASR::ttypeType::Complex:
+            case ASR::ttypeType::Character:
+            case ASR::ttypeType::FunctionType:
+            case ASR::ttypeType::CPtr:
+            case ASR::ttypeType::Allocatable: {
+                break ;
+            }
+            case ASR::ttypeType::Tuple: {
+                // TODO: implement tuple free
+                break ;
+            }
+            case ASR::ttypeType::List: {
+                ASR::List_t* list_type = ASR::down_cast<ASR::List_t>(asr_type);
+                list_api->free_data(src, list_type->m_type, *module);
+                break ;
+            }
+            case ASR::ttypeType::Dict: {
+                ASR::Dict_t* dict_type = ASR::down_cast<ASR::Dict_t>(asr_type);
+                set_dict_api(dict_type);
+                dict_api->dict_free(src, module, dict_type->m_key_type,
+                    dict_type->m_value_type);
+                break ;
+            }
+            case ASR::ttypeType::Set: {
+                ASR::Set_t *set_type = ASR::down_cast<ASR::Set_t>(asr_type);
+                set_set_api(set_type);
+                set_api->set_free(src, module, set_type->m_type);
+                break ;
+            }
+            case ASR::ttypeType::StructType: {
+                // TODO: implement struct free and call destructor if required
+                break ;
+            }
+            default: {
+                break;
+            }
+                            
         }
     }
 
@@ -2075,6 +2130,11 @@ namespace LCompilers {
         return get_key_value_pair_type(key_type_code, value_type_code);
     }
 
+    llvm::Type* LLVMDict::get_key_value_pair_type(
+        ASR::ttype_t* /*key_asr_type*/, ASR::ttype_t* /*value_asr_type*/) {
+        return nullptr;
+    }
+
     llvm::Type* LLVMDictSeparateChaining::get_dict_type(
         std::string key_type_code, std::string value_type_code,
         int32_t key_type_size, int32_t value_type_size,
@@ -2154,6 +2214,10 @@ namespace LCompilers {
 
     llvm::Value* LLVMDict::get_key_list(llvm::Value* dict) {
         return llvm_utils->create_gep(dict, 1);
+    }
+
+    llvm::Value* LLVMDict::get_pointer_to_key_value_pairs(llvm::Value* /*dict*/) {
+        return nullptr;
     }
 
     llvm::Value* LLVMDictSeparateChaining::get_pointer_to_key_value_pairs(llvm::Value* dict) {
@@ -3177,7 +3241,7 @@ namespace LCompilers {
     llvm::Value* LLVMDict::resolve_collision_for_read_with_bound_check(
         llvm::Value* dict, llvm::Value* key_hash,
         llvm::Value* key, llvm::Module& module,
-        ASR::ttype_t* key_asr_type, ASR::ttype_t* /*value_asr_type*/) {
+        ASR::ttype_t* key_asr_type, ASR::ttype_t* /*value_asr_type*/, bool check_if_exists) {
         llvm::Value* key_list = get_key_list(dict);
         llvm::Value* value_list = get_value_list(dict);
         llvm::Value* key_mask = LLVM::CreateLoad(*builder, get_pointer_to_keymask(dict));
@@ -3187,6 +3251,8 @@ namespace LCompilers {
         llvm::Value* is_key_matching = llvm_utils->is_equal_by_value(key,
             llvm_utils->list_api->read_item(key_list, pos, false, module,
                 LLVM::is_llvm_struct(key_asr_type)), module, key_asr_type);
+        if (check_if_exists)
+            return is_key_matching;
 
         llvm_utils->create_if_else(is_key_matching, [&]() {
         }, [&]() {
@@ -3245,7 +3311,7 @@ namespace LCompilers {
     llvm::Value* LLVMDictOptimizedLinearProbing::resolve_collision_for_read_with_bound_check(
         llvm::Value* dict, llvm::Value* key_hash,
         llvm::Value* key, llvm::Module& module,
-        ASR::ttype_t* key_asr_type, ASR::ttype_t* /*value_asr_type*/) {
+        ASR::ttype_t* key_asr_type, ASR::ttype_t* /*value_asr_type*/, bool check_if_exists) {
 
         /**
          * C++ equivalent:
@@ -3287,6 +3353,9 @@ namespace LCompilers {
                                         llvm_utils->create_ptr_gep(key_mask, key_hash));
         llvm::Value* is_prob_not_neeeded = builder->CreateICmpEQ(key_mask_value,
             llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 1)));
+        llvm::AllocaInst *flag_ptr = builder0.CreateAlloca(llvm::Type::getInt1Ty(context), nullptr);
+        LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0), flag_ptr);
+        LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0), pos_ptr);
         builder->CreateCondBr(is_prob_not_neeeded, thenBB, elseBB);
         builder->SetInsertPoint(thenBB);
         {
@@ -3304,6 +3373,9 @@ namespace LCompilers {
             llvm_utils->create_if_else(is_key_matching, [=]() {
                 LLVM::CreateStore(*builder, key_hash, pos_ptr);
             }, [&]() {
+            if (check_if_exists) {
+                LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 1), flag_ptr);
+            } else {
                 std::string message = "The dict does not contain the specified key";
                 llvm::Value *fmt_ptr = builder->CreateGlobalStringPtr("KeyError: %s\n");
                 llvm::Value *fmt_ptr2 = builder->CreateGlobalStringPtr(message);
@@ -3312,7 +3384,7 @@ namespace LCompilers {
                 llvm::Value *exit_code = llvm::ConstantInt::get(context,
                         llvm::APInt(32, exit_code_int));
                 exit(context, module, *builder, exit_code);
-            });
+            }});
         }
         builder->CreateBr(mergeBB);
         llvm_utils->start_new_block(elseBB);
@@ -3321,11 +3393,29 @@ namespace LCompilers {
                            module, key_asr_type, true);
         }
         llvm_utils->start_new_block(mergeBB);
-        llvm::Value* pos = LLVM::CreateLoad(*builder, pos_ptr);
-        // Check if the actual key is present or not
-        llvm::Value* is_key_matching = llvm_utils->is_equal_by_value(key,
+        llvm::Value *pos = LLVM::CreateLoad(*builder, pos_ptr);
+        llvm::Value* pos_mask_value = LLVM::CreateLoad(*builder,
+                                        llvm_utils->create_ptr_gep(key_mask, pos));
+        llvm::Value *flag = builder->CreateOr(
+            builder->CreateICmpEQ(pos_mask_value,
+            llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 0))),
+            LLVM::CreateLoad(*builder, flag_ptr));
+        llvm::AllocaInst *is_key_matching_ptr = builder0.CreateAlloca(llvm::Type::getInt1Ty(context), nullptr);
+
+        llvm_utils->create_if_else(flag, [&](){
+        LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0), is_key_matching_ptr);
+            }, [&](){
+        // Check if the actual element is present or not
+        LLVM::CreateStore(*builder, llvm_utils->is_equal_by_value(key,
                 llvm_utils->list_api->read_item(key_list, pos, false, module,
-                    LLVM::is_llvm_struct(key_asr_type)), module, key_asr_type);
+                    LLVM::is_llvm_struct(key_asr_type)), module, key_asr_type), is_key_matching_ptr);
+        });
+
+        llvm::Value *is_key_matching = LLVM::CreateLoad(*builder, is_key_matching_ptr);
+
+        if (check_if_exists) {
+            return is_key_matching;
+        }
 
         llvm_utils->create_if_else(is_key_matching, [&]() {
         }, [&]() {
@@ -3471,7 +3561,7 @@ namespace LCompilers {
     llvm::Value* LLVMDictSeparateChaining::resolve_collision_for_read_with_bound_check(
         llvm::Value* dict, llvm::Value* key_hash,
         llvm::Value* key, llvm::Module& module,
-        ASR::ttype_t* key_asr_type, ASR::ttype_t* value_asr_type) {
+        ASR::ttype_t* key_asr_type, ASR::ttype_t* value_asr_type, bool check_if_exists) {
         /**
          * C++ equivalent:
          *
@@ -3505,6 +3595,10 @@ namespace LCompilers {
             builder->CreateICmpNE(LLVM::CreateLoad(*builder, chain_itr),
             llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(context)))
         );
+
+        if (check_if_exists) {
+            return does_kv_exists;
+        }
 
         llvm_utils->create_if_else(does_kv_exists, [&]() {
             llvm::Value* kv_struct_i8 = LLVM::CreateLoad(*builder, chain_itr);
@@ -3781,9 +3875,7 @@ namespace LCompilers {
         llvm_utils->start_new_block(loopend);
 
         // TODO: Free key_list, value_list and key_mask
-        llvm_utils->list_api->free_data(key_list, *module);
-        llvm_utils->list_api->free_data(value_list, *module);
-        LLVM::lfortran_free(context, *module, *builder, key_mask);
+        dict_free(dict, module, key_asr_type, value_asr_type);
         LLVM::CreateStore(*builder, LLVM::CreateLoad(*builder, new_key_list), key_list);
         LLVM::CreateStore(*builder, LLVM::CreateLoad(*builder, new_value_list), value_list);
         LLVM::CreateStore(*builder, new_key_mask, get_pointer_to_keymask(dict));
@@ -3878,6 +3970,9 @@ namespace LCompilers {
 
         // end
         llvm_utils->start_new_block(loopend);
+
+        free_data(module, key_asr_type, value_asr_type, old_capacity_value, old_key_mask_value, old_key_value_pairs_value);
+
         builder->CreateBr(mergeBB_rehash);
         llvm_utils->start_new_block(elseBB_rehash);
         {
@@ -4359,6 +4454,166 @@ namespace LCompilers {
         llvm_utils->start_new_block(loopend);
     }
 
+    void LLVMDictSeparateChaining::free_data(llvm::Module *module, ASR::ttype_t* key_asr_type, 
+        ASR::ttype_t* value_asr_type, llvm::Value *capacity,
+        llvm::Value *key_mask, llvm::Value *key_value_pairs) {
+      /* C++ equivalent:
+       * idx = 0;
+       * while (capacity > idx) {
+       *   key_mask_value = key_mask[idx];
+       *   is_key_set = key_mask_value == 1;
+       *   if (is_key_set) {
+       *     dict_i = key_value_pairs[idx];
+       *     chain_itr = (i8*)dict_i;
+       *
+       *     chain_itr = chain_itr[2];
+       *     while (chain_itr != nullptr) {
+       *       kv_struct = (kv_pair_type*)chain_itr;
+       *       free_data(kv_struct[0]);
+       *       free_data(kv_struct[1]);
+       *       next_kv_struct = kv_struct[2];
+       *       chain_itr = next_kv_struct;
+       *       free(kv_struct);
+       *     }
+       *   }
+       *   idx++;
+       * }
+       */
+        llvm::Type* kv_pair_type = 
+            get_key_value_pair_type(key_asr_type, value_asr_type);
+        get_builder0()
+        llvm::AllocaInst *chain_itr = builder0.CreateAlloca(
+            llvm::Type::getInt8PtrTy(context), nullptr);
+        llvm::AllocaInst *idx_ptr = builder0.CreateAlloca(
+            llvm::Type::getInt32Ty(context), nullptr);
+        LLVM::CreateStore(*builder, llvm::ConstantInt::get(
+            llvm::Type::getInt32Ty(context), llvm::APInt(32, 0)), idx_ptr);
+        llvm::BasicBlock *loophead = llvm::BasicBlock::Create(context, "loop.head");
+        llvm::BasicBlock *loopbody = llvm::BasicBlock::Create(context, "loop.body");
+        llvm::BasicBlock *loopend = llvm::BasicBlock::Create(context, "loop.end");
+
+        // head
+        llvm_utils->start_new_block(loophead);
+        {
+            llvm::Value *cond = builder->CreateICmpSGT(
+                                        capacity,
+                                        LLVM::CreateLoad(*builder, idx_ptr));
+            builder->CreateCondBr(cond, loopbody, loopend);
+        }
+
+        // body
+        llvm_utils->start_new_block(loopbody);
+        {
+            llvm::Value* idx = LLVM::CreateLoad(*builder, idx_ptr);
+            llvm::Value* key_mask_value = LLVM::CreateLoad(*builder,
+                llvm_utils->create_ptr_gep(key_mask, idx));
+            
+            llvm::Value* is_key_set = builder->CreateICmpEQ(key_mask_value,
+                llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 1)));
+
+            llvm_utils->create_if_else(is_key_set, [&]() {
+                llvm::Value* dict_i = llvm_utils->create_ptr_gep(key_value_pairs, idx);
+                llvm::Value* kv_ll_i8 = builder->CreateBitCast(dict_i, llvm::Type::getInt8PtrTy(context));
+                LLVM::CreateStore(*builder, kv_ll_i8, chain_itr);
+
+                // In the linked list, we should not free the head node,
+                // since that will be freed through the final list free
+                // Hence we proceed to the next node and start freeing from there
+                llvm::Value* kv_struct_i8 = LLVM::CreateLoad(*builder, chain_itr);
+                llvm::Value* kv_struct = builder->CreateBitCast(kv_struct_i8, kv_pair_type->getPointerTo());
+                llvm::Value* next_kv_struct = LLVM::CreateLoad(*builder, llvm_utils->create_gep(kv_struct, 2));
+                LLVM::CreateStore(*builder, next_kv_struct, chain_itr);
+
+                llvm::BasicBlock *loop2head = llvm::BasicBlock::Create(context, "loop2.head");
+                llvm::BasicBlock *loop2body = llvm::BasicBlock::Create(context, "loop2.body");
+                llvm::BasicBlock *loop2end = llvm::BasicBlock::Create(context, "loop2.end");
+
+                // head
+                llvm_utils->start_new_block(loop2head);
+                {
+                    llvm::Value *cond = builder->CreateICmpNE(
+                        LLVM::CreateLoad(*builder, chain_itr),
+                        llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(context))
+                    );
+                    builder->CreateCondBr(cond, loop2body, loop2end);
+                }
+
+                // body
+                llvm_utils->start_new_block(loop2body);
+                {
+                    llvm::Value* kv_struct_i8 = LLVM::CreateLoad(*builder, chain_itr);
+                    llvm::Value* kv_struct = builder->CreateBitCast(kv_struct_i8, kv_pair_type->getPointerTo());
+                    llvm::Value* key_ptr = llvm_utils->create_gep(kv_struct, 0);
+                    llvm::Value* value_ptr = llvm_utils->create_gep(kv_struct, 1);
+                    if( LLVM::is_llvm_struct(key_asr_type) ) {
+                        llvm_utils->free_data(key_ptr, key_asr_type, module);
+                    }
+                    if( LLVM::is_llvm_struct(value_asr_type) ) {
+                        llvm_utils->free_data(value_ptr, value_asr_type, module);
+                    }
+                    llvm::Value* next_kv_struct = LLVM::CreateLoad(*builder, llvm_utils->create_gep(kv_struct, 2));
+                    LLVM::CreateStore(*builder, next_kv_struct, chain_itr);
+                    LLVM::lfortran_free(context, *module, *builder, kv_struct_i8);
+                }
+
+                builder->CreateBr(loop2head);
+
+                // end
+                llvm_utils->start_new_block(loop2end);
+            }, [=]() {
+            });
+            llvm::Value* tmp = builder->CreateAdd(idx,
+                        llvm::ConstantInt::get(context, llvm::APInt(32, 1)));
+            LLVM::CreateStore(*builder, tmp, idx_ptr);
+        }
+        builder->CreateBr(loophead);
+
+        // end
+        llvm_utils->start_new_block(loopend);
+
+        LLVM::lfortran_free(context, *module, *builder, key_mask);
+        LLVM::lfortran_free(context, *module, *builder, key_value_pairs);
+    }
+  
+    void LLVMDict::dict_clear(llvm::Value *dict, llvm::Module *module,
+        ASR::ttype_t *key_asr_type, ASR::ttype_t* value_asr_type) {
+        dict_free(dict, module, key_asr_type, value_asr_type);
+
+        std::string key_type_code = ASRUtils::get_type_code(key_asr_type);
+        std::string value_type_code = ASRUtils::get_type_code(value_asr_type);
+        dict_init(key_type_code, value_type_code, dict, module, 0);
+    }
+
+    void LLVMDictSeparateChaining::dict_clear(llvm::Value *dict, llvm::Module *module,
+        ASR::ttype_t *key_asr_type, ASR::ttype_t* value_asr_type) {
+        dict_free(dict, module, key_asr_type, value_asr_type);
+        dict_init(ASRUtils::get_type_code(key_asr_type), 
+            ASRUtils::get_type_code(value_asr_type), dict, module, 0);
+    }
+
+    void LLVMDict::dict_free(llvm::Value *dict, llvm::Module *module,
+        ASR::ttype_t *key_asr_type, ASR::ttype_t* value_asr_type) {
+        llvm::Value* key_list = get_key_list(dict);
+        llvm::Value* value_list = get_value_list(dict);
+        llvm::Value* key_mask = LLVM::CreateLoad(*builder, get_pointer_to_keymask(dict));
+        llvm_utils->list_api->free_data(key_list, key_asr_type, *module);
+        llvm_utils->list_api->free_data(value_list, value_asr_type, *module);
+        LLVM::lfortran_free(context, *module, *builder, key_mask);
+    }
+
+    void LLVMDictSeparateChaining::dict_free(llvm::Value *dict, llvm::Module *module,
+        ASR::ttype_t *key_asr_type, ASR::ttype_t* value_asr_type) {
+        llvm::Value *key_value_pairs = LLVM::CreateLoad(*builder, 
+          get_pointer_to_key_value_pairs(dict));
+        llvm::Value *capacity = LLVM::CreateLoad(*builder,
+            get_pointer_to_capacity(dict));
+        llvm::Value *key_mask = LLVM::CreateLoad(*builder, 
+            get_pointer_to_keymask(dict));
+        free_data(module, key_asr_type, value_asr_type, capacity, key_mask, key_value_pairs);
+    }
+
+
+
     llvm::Value* LLVMList::read_item(llvm::Value* list, llvm::Value* pos,
                                      bool enable_bounds_checking,
                                      llvm::Module& module, bool get_pointer) {
@@ -4663,7 +4918,10 @@ namespace LCompilers {
 
         /* Equivalent in C++:
          * int i = start;
-         * while(list[i] != item && end_point > i) {
+         * while(end_point > i) {
+         *     if (list[i] == item) {
+         *         break;
+         *     }
          *     i++;
          * }
          *
@@ -4679,28 +4937,38 @@ namespace LCompilers {
         // head
         llvm_utils->start_new_block(loophead);
         {
-            llvm::Value* left_arg = read_item(list, LLVM::CreateLoad(*builder, i),
-                false, module, LLVM::is_llvm_struct(item_type));
-            llvm::Value* is_item_not_equal = builder->CreateNot(
-                                                llvm_utils->is_equal_by_value(
-                                                    left_arg, item,
-                                                    module, item_type)
-                                            );
-            llvm::Value *cond = builder->CreateAnd(is_item_not_equal,
-                                                   builder->CreateICmpSGT(end_point,
-                                                    LLVM::CreateLoad(*builder, i)));
+            llvm::Value *cond = builder->CreateICmpSGT(end_point,
+                                  LLVM::CreateLoad(*builder, i));
             builder->CreateCondBr(cond, loopbody, loopend);
         }
 
         // body
         llvm_utils->start_new_block(loopbody);
         {
-            tmp = builder->CreateAdd(
-                        LLVM::CreateLoad(*builder, i),
-                        llvm::ConstantInt::get(context, llvm::APInt(32, 1)));
-            LLVM::CreateStore(*builder, tmp, i);
+            llvm::Value* left_arg = read_item(list, LLVM::CreateLoad(*builder, i),
+                false, module, LLVM::is_llvm_struct(item_type));
+
+            llvm::Value* is_item_equal = llvm_utils->is_equal_by_value(
+                                                    left_arg, item,
+                                                    module, item_type);
+
+            llvm::BasicBlock *ifblock = llvm::BasicBlock::Create(context, "if");
+            llvm::BasicBlock *elseblock = llvm::BasicBlock::Create(context, "else");
+
+            llvm_utils->start_new_block(ifblock);
+            {
+                builder->CreateCondBr(is_item_equal, loopend, elseblock);
+            }
+            
+            llvm_utils->start_new_block(elseblock);
+            {
+                tmp = builder->CreateAdd(
+                            LLVM::CreateLoad(*builder, i),
+                            llvm::ConstantInt::get(context, llvm::APInt(32, 1)));
+                LLVM::CreateStore(*builder, tmp, i);
+                builder->CreateBr(loophead);
+            }
         }
-        builder->CreateBr(loophead);
 
         // end
         llvm_utils->start_new_block(loopend);
@@ -4714,6 +4982,9 @@ namespace LCompilers {
             std::string message = "The list does not contain the element: ";
             llvm::Value *fmt_ptr = builder->CreateGlobalStringPtr("ValueError: %s%d\n");
             llvm::Value *fmt_ptr2 = builder->CreateGlobalStringPtr(message);
+            if (ASR::is_a<ASR::Character_t>(*item_type)) {
+                fmt_ptr = builder->CreateGlobalStringPtr("ValueError: %s%s\n");
+            }
             print_error(context, module, *builder, {fmt_ptr, fmt_ptr2, item});
             int exit_code_int = 1;
             llvm::Value *exit_code = llvm::ConstantInt::get(context,
@@ -4956,14 +5227,55 @@ namespace LCompilers {
         return item;
     }
 
-    void LLVMList::list_clear(llvm::Value* list) {
-        llvm::Value* end_point_ptr = get_pointer_to_current_end_point(list);
-        llvm::Value* zero = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context),
-                                                   llvm::APInt(32, 0));
-        LLVM::CreateStore(*builder, zero, end_point_ptr);
+    void LLVMList::list_clear(llvm::Value* list, ASR::ttype_t *item_type,
+                              llvm::Module* module) {
+        free_data(list, item_type, *module);
+        std::string type_code = ASRUtils::get_type_code(item_type) ;
+        list_init(type_code, list, *module, 0, 0);
     }
 
-    void LLVMList::free_data(llvm::Value* list, llvm::Module& module) {
+    void LLVMList::free_data(llvm::Value* list, ASR::ttype_t* item_type, llvm::Module& module) {
+        // If it is an llvm struct, then it would require nested freeing,
+        // or else a simple free of the allocated data for the list is enough.
+        get_builder0()
+        if (LLVM::is_llvm_struct(item_type)) {
+            llvm::AllocaInst *pos_ptr = builder0.CreateAlloca(llvm::Type::getInt32Ty(context),
+                                                              nullptr);
+            LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context),
+                                                               llvm::APInt(32, 0)), pos_ptr);
+
+            llvm::BasicBlock *loophead = llvm::BasicBlock::Create(context, "loop.head");
+            llvm::BasicBlock *loopbody = llvm::BasicBlock::Create(context, "loop.body");
+            llvm::BasicBlock *loopend = llvm::BasicBlock::Create(context, "loop.end");
+
+            // head
+            llvm_utils->start_new_block(loophead);
+            {
+                llvm::Value *cond = builder->CreateICmpSGT(
+                                            LLVM::CreateLoad(*builder,
+                                            get_pointer_to_current_end_point(list)),
+                                            LLVM::CreateLoad(*builder, pos_ptr));
+                builder->CreateCondBr(cond, loopbody, loopend);
+            }
+
+            // body
+            llvm_utils->start_new_block(loopbody);
+            {
+                llvm::Value* pos = LLVM::CreateLoad(*builder, pos_ptr);
+                llvm::Value* item = read_item(list, pos, false, module, true);
+
+                llvm_utils->free_data(item, item_type, &module);
+                llvm::Value* tmp = builder->CreateAdd(
+                            pos,
+                            llvm::ConstantInt::get(context, llvm::APInt(32, 1)));
+                LLVM::CreateStore(*builder, tmp, pos_ptr);
+            }
+            builder->CreateBr(loophead);
+
+            // end
+            llvm_utils->start_new_block(loopend);
+        }
+
         llvm::Value* data = LLVM::CreateLoad(*builder, get_pointer_to_list_data(list));
         LLVM::lfortran_free(context, module, *builder, data);
     }
@@ -6126,8 +6438,7 @@ namespace LCompilers {
         // end
         llvm_utils->start_new_block(loopend);
 
-        llvm_utils->list_api->free_data(el_list, *module);
-        LLVM::lfortran_free(context, *module, *builder, el_mask);
+        set_free(set, module, el_asr_type);
         LLVM::CreateStore(*builder, LLVM::CreateLoad(*builder, new_el_list), el_list);
         LLVM::CreateStore(*builder, new_el_mask, get_pointer_to_mask(set));
     }
@@ -6240,6 +6551,9 @@ namespace LCompilers {
 
         // end
         llvm_utils->start_new_block(loopend);
+
+        free_data(module, el_asr_type, old_capacity_value, old_elems_value, old_el_mask_value);
+
         builder->CreateBr(mergeBB_rehash);
         llvm_utils->start_new_block(elseBB_rehash);
         {
@@ -6391,11 +6705,12 @@ namespace LCompilers {
         llvm::Value* el_hash = get_el_hash(current_capacity, el, el_asr_type, *module);
         this->resolve_collision_for_write(set, el_hash, el, module,
                                           el_asr_type, name2memidx);
+        rehash_all_at_once_if_needed(set, module, el_asr_type, name2memidx);
     }
 
-    void LLVMSetLinearProbing::resolve_collision_for_read_with_bound_check(
+    llvm::Value* LLVMSetLinearProbing::resolve_collision_for_read_with_bound_check(
         llvm::Value* set, llvm::Value* el_hash, llvm::Value* el,
-        llvm::Module& module, ASR::ttype_t* el_asr_type, bool throw_key_error) {
+        llvm::Module& module, ASR::ttype_t* el_asr_type, bool throw_key_error, bool check_if_exists) {
 
         /**
          * C++ equivalent:
@@ -6423,18 +6738,22 @@ namespace LCompilers {
          */
 
         get_builder0()
+        pos_ptr = builder0.CreateAlloca(llvm::Type::getInt32Ty(context), nullptr);
         llvm::Value* el_list = get_el_list(set);
         llvm::Value* el_mask = LLVM::CreateLoad(*builder, get_pointer_to_mask(set));
         llvm::Value* capacity = LLVM::CreateLoad(*builder, get_pointer_to_capacity(set));
-        pos_ptr = builder0.CreateAlloca(llvm::Type::getInt32Ty(context), nullptr);
         llvm::Function *fn = builder->GetInsertBlock()->getParent();
-        llvm::BasicBlock *thenBB = llvm::BasicBlock::Create(context, "then", fn);
-        llvm::BasicBlock *elseBB = llvm::BasicBlock::Create(context, "else");
-        llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(context, "ifcont");
+        std::string s = check_if_exists ? "qq" : "pp"; 
+        llvm::BasicBlock *thenBB = llvm::BasicBlock::Create(context, "then"+s, fn);
+        llvm::BasicBlock *elseBB = llvm::BasicBlock::Create(context, "else"+s);
+        llvm::BasicBlock *mergeBB = llvm::BasicBlock::Create(context, "ifcont"+s);
         llvm::Value* el_mask_value = LLVM::CreateLoad(*builder,
                                         llvm_utils->create_ptr_gep(el_mask, el_hash));
         llvm::Value* is_prob_not_needed = builder->CreateICmpEQ(el_mask_value,
             llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 1)));
+        llvm::AllocaInst *flag_ptr = builder0.CreateAlloca(llvm::Type::getInt1Ty(context), nullptr);
+        LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0), pos_ptr);
+        LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0), flag_ptr);
         builder->CreateCondBr(is_prob_not_needed, thenBB, elseBB);
         builder->SetInsertPoint(thenBB);
         {
@@ -6447,6 +6766,9 @@ namespace LCompilers {
             llvm_utils->create_if_else(is_el_matching, [=]() {
                 LLVM::CreateStore(*builder, el_hash, pos_ptr);
             }, [&]() {
+            if (check_if_exists) {
+                LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 1), flag_ptr);
+            } else {
                 if (throw_key_error) {
                     std::string message = "The set does not contain the specified element";
                     llvm::Value *fmt_ptr = builder->CreateGlobalStringPtr("KeyError: %s\n");
@@ -6457,7 +6779,7 @@ namespace LCompilers {
                             llvm::APInt(32, exit_code_int));
                     exit(context, module, *builder, exit_code);
                 }
-            });
+            }});
         }
         builder->CreateBr(mergeBB);
         llvm_utils->start_new_block(elseBB);
@@ -6466,11 +6788,31 @@ namespace LCompilers {
                                     module, el_asr_type, true);
         }
         llvm_utils->start_new_block(mergeBB);
+
         llvm::Value* pos = LLVM::CreateLoad(*builder, pos_ptr);
+        llvm::Value* pos_mask_value = LLVM::CreateLoad(*builder,
+                                        llvm_utils->create_ptr_gep(el_mask, pos));
+        llvm::Value *flag = builder->CreateOr(
+            builder->CreateICmpEQ(pos_mask_value,
+            llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 0))),
+            LLVM::CreateLoad(*builder, flag_ptr));
+        llvm::AllocaInst *is_el_matching_ptr = builder0.CreateAlloca(llvm::Type::getInt1Ty(context), nullptr);
+
+        llvm_utils->create_if_else(flag, [&](){
+        LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt1Ty(context), 0), is_el_matching_ptr);
+            }, [&](){
         // Check if the actual element is present or not
-        llvm::Value* is_el_matching = llvm_utils->is_equal_by_value(el,
-                llvm_utils->list_api->read_item(el_list, pos, false, module,
-                    LLVM::is_llvm_struct(el_asr_type)), module, el_asr_type);
+        llvm::Value* item = llvm_utils->list_api->read_item(el_list, pos, false, module,
+                    LLVM::is_llvm_struct(el_asr_type)) ;
+        llvm::Value *iseq =llvm_utils->is_equal_by_value(el,
+                    item, module, el_asr_type) ;
+        LLVM::CreateStore(*builder, iseq, is_el_matching_ptr);
+        });
+
+        llvm::Value *is_el_matching = LLVM::CreateLoad(*builder, is_el_matching_ptr);
+        if (check_if_exists) {
+            return is_el_matching;
+        }
 
         llvm_utils->create_if_else(is_el_matching, []() {}, [&]() {
             if (throw_key_error) {
@@ -6484,11 +6826,13 @@ namespace LCompilers {
                 exit(context, module, *builder, exit_code);
             }
         });
+      
+        return nullptr;
     }
 
-    void LLVMSetSeparateChaining::resolve_collision_for_read_with_bound_check(
+    llvm::Value* LLVMSetSeparateChaining::resolve_collision_for_read_with_bound_check(
         llvm::Value* set, llvm::Value* el_hash, llvm::Value* el,
-        llvm::Module& module, ASR::ttype_t* el_asr_type, bool throw_key_error) {
+        llvm::Module& module, ASR::ttype_t* el_asr_type, bool throw_key_error, bool check_if_exists) {
         /**
          * C++ equivalent:
          *
@@ -6515,6 +6859,10 @@ namespace LCompilers {
             llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(context)))
         );
 
+        if (check_if_exists) {
+            return does_el_exist;
+        }
+
         llvm_utils->create_if_else(does_el_exist, []() {}, [&]() {
             if (throw_key_error) {
                 std::string message = "The set does not contain the specified element";
@@ -6527,6 +6875,8 @@ namespace LCompilers {
                 exit(context, module, *builder, exit_code);
             }
         });
+
+        return nullptr;
     }
 
     void LLVMSetLinearProbing::remove_item(
@@ -6622,6 +6972,180 @@ namespace LCompilers {
         occupancy = builder->CreateSub(occupancy, llvm::ConstantInt::get(
                         llvm::Type::getInt32Ty(context), llvm::APInt(32, 1)));
         LLVM::CreateStore(*builder, occupancy, occupancy_ptr);
+    }
+
+    llvm::Value* LLVMSetLinearProbing::pop_item(llvm::Value *set, llvm::Module &module,
+        ASR::ttype_t *el_asr_type) {
+        llvm::Value* current_capacity = LLVM::CreateLoad(*builder, get_pointer_to_capacity(set));
+
+        llvm::Value* occupancy_ptr = get_pointer_to_occupancy(set);
+        llvm::Value* occupancy = LLVM::CreateLoad(*builder, occupancy_ptr);
+        llvm_utils->create_if_else(builder->CreateICmpNE(occupancy, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0)), [=]() {}, [&]() {
+            std::string message = "The set is empty";
+            llvm::Value *fmt_ptr = builder->CreateGlobalStringPtr("KeyError: %s\n");
+            llvm::Value *fmt_ptr2 = builder->CreateGlobalStringPtr(message);
+            print_error(context, module, *builder, {fmt_ptr, fmt_ptr2});
+            int exit_code_int = 1;
+            llvm::Value *exit_code = llvm::ConstantInt::get(context,
+                    llvm::APInt(32, exit_code_int));
+            exit(context, module, *builder, exit_code);
+        });
+        get_builder0();
+        llvm::AllocaInst *pos_ptr = builder0.CreateAlloca(llvm::Type::getInt32Ty(context), nullptr);
+        LLVM::CreateStore(*builder, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0), pos_ptr);
+        
+        llvm::BasicBlock *loophead = llvm::BasicBlock::Create(context, "loop.head");
+        llvm::BasicBlock *loopbody = llvm::BasicBlock::Create(context, "loop.body");
+        llvm::BasicBlock *loopend = llvm::BasicBlock::Create(context, "loop.end");
+
+        llvm::Value *el_mask = LLVM::CreateLoad(*builder, get_pointer_to_mask(set));
+        llvm::Value *el_list = get_el_list(set);
+
+        // head
+        llvm_utils->start_new_block(loophead);
+        {
+            llvm::Value *cond = builder->CreateICmpSGT(
+                current_capacity,
+                LLVM::CreateLoad(*builder, pos_ptr)
+            );
+            builder->CreateCondBr(cond, loopbody, loopend);
+        }
+
+        // body
+        llvm_utils->start_new_block(loopbody);
+        {
+            llvm::Value* pos = LLVM::CreateLoad(*builder, pos_ptr);
+            llvm::Value* el_mask_value = LLVM::CreateLoad(*builder,
+                llvm_utils->create_ptr_gep(el_mask, pos));
+            llvm::Value* is_el_skip = builder->CreateICmpEQ(el_mask_value,
+                llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 3)));
+            llvm::Value* is_el_set = builder->CreateICmpNE(el_mask_value,
+                llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 0)));
+            llvm::Value* is_el = builder->CreateAnd(is_el_set,
+                                            builder->CreateNot(is_el_skip));
+
+            llvm_utils->create_if_else(is_el, [&]() {
+                llvm::Value* el_mask_i = llvm_utils->create_ptr_gep(el_mask, pos);
+                llvm::Value* tombstone_marker = llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 3));
+                LLVM::CreateStore(*builder, tombstone_marker, el_mask_i);
+                occupancy = builder->CreateSub(occupancy, llvm::ConstantInt::get(
+                                llvm::Type::getInt32Ty(context), llvm::APInt(32, 1)));
+                LLVM::CreateStore(*builder, occupancy, occupancy_ptr);
+            }, [=]() {
+                LLVM::CreateStore(*builder, builder->CreateAdd(pos, llvm::ConstantInt::get(
+                        llvm::Type::getInt32Ty(context), llvm::APInt(32, 1))), pos_ptr);
+            });
+            builder->CreateCondBr(is_el, loopend, loophead);
+        }
+
+        // end
+        llvm_utils->start_new_block(loopend);
+
+        llvm::Value* pos = LLVM::CreateLoad(*builder, pos_ptr);
+        llvm::Value *el = llvm_utils->list_api->read_item(el_list, pos, false, module,
+            LLVM::is_llvm_struct(el_asr_type));
+        return el;
+    }
+
+    llvm::Value* LLVMSetSeparateChaining::pop_item(llvm::Value *set, llvm::Module &module,
+        ASR::ttype_t *el_asr_type) {
+        llvm::Value* current_capacity = LLVM::CreateLoad(*builder, get_pointer_to_capacity(set));
+        llvm::Value* occupancy_ptr = get_pointer_to_occupancy(set);
+        llvm::Value* occupancy = LLVM::CreateLoad(*builder, occupancy_ptr);
+        llvm_utils->create_if_else(builder->CreateICmpNE(occupancy, llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0)), []() {}, [&]() {
+            std::string message = "The set is empty";
+            llvm::Value *fmt_ptr = builder->CreateGlobalStringPtr("KeyError: %s\n");
+            llvm::Value *fmt_ptr2 = builder->CreateGlobalStringPtr(message);
+            print_error(context, module, *builder, {fmt_ptr, fmt_ptr2});
+            int exit_code_int = 1;
+            llvm::Value *exit_code = llvm::ConstantInt::get(context,
+                    llvm::APInt(32, exit_code_int));
+            exit(context, module, *builder, exit_code);
+        });
+
+        get_builder0();
+        llvm::AllocaInst* chain_itr = builder0.CreateAlloca(llvm::Type::getInt8PtrTy(context), nullptr);
+        llvm::AllocaInst* found_ptr = builder0.CreateAlloca(llvm::Type::getInt8PtrTy(context), nullptr);
+        llvm::AllocaInst* pos = builder0.CreateAlloca(llvm::Type::getInt32Ty(context), nullptr);
+        LLVM::CreateStore(*builder,
+            llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0), pos);
+
+        llvm::BasicBlock *loophead = llvm::BasicBlock::Create(context, "loop.head");
+        llvm::BasicBlock *loopbody = llvm::BasicBlock::Create(context, "loop.body");
+        llvm::BasicBlock *loopend = llvm::BasicBlock::Create(context, "loop.end");
+
+        llvm::Value* elems = LLVM::CreateLoad(*builder, get_pointer_to_elems(set));
+        llvm::Value* el_mask = LLVM::CreateLoad(*builder, get_pointer_to_mask(set));
+
+        // head
+        llvm_utils->start_new_block(loophead);
+        {
+            llvm::Value *cond = builder->CreateICmpSGT(
+                current_capacity,
+                LLVM::CreateLoad(*builder, pos_ptr)
+            );
+            builder->CreateCondBr(cond, loopbody, loopend);
+        }
+
+        // body
+        llvm_utils->start_new_block(loopbody);
+        {
+            llvm::Value *el_mask_value = LLVM::CreateLoad(*builder, 
+                llvm_utils->create_ptr_gep(el_mask, LLVM::CreateLoad(*builder, pos)));
+            llvm::Value* el_linked_list = llvm_utils->create_ptr_gep(elems, LLVM::CreateLoad(*builder, pos));
+              
+            llvm::Value *is_el = builder->CreateICmpEQ(el_mask_value,
+                    llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 1)));
+            llvm_utils->create_if_else(is_el, [&]() {
+                llvm::Value* el_ll_i8 = builder->CreateBitCast(el_linked_list, llvm::Type::getInt8PtrTy(context));
+                LLVM::CreateStore(*builder, el_ll_i8, chain_itr);
+                llvm::Value* el_struct_i8 = LLVM::CreateLoad(*builder, chain_itr);
+                llvm::Type* el_struct_type = typecode2elstruct[ASRUtils::get_type_code(el_asr_type)];
+                llvm::Value* el_struct = builder->CreateBitCast(el_struct_i8, el_struct_type->getPointerTo());
+                llvm::Value* next_el_struct = LLVM::CreateLoad(*builder, llvm_utils->create_gep(el_struct, 1));
+                llvm::Value *cond = builder->CreateICmpNE(
+                    next_el_struct,
+                    llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(context))
+                );
+
+                llvm_utils->create_if_else(cond, [&](){
+                    llvm::Value *found = LLVM::CreateLoad(*builder, next_el_struct);
+                    llvm::Value *prev = LLVM::CreateLoad(*builder, chain_itr);
+                    found = builder->CreateBitCast(found, el_struct_type->getPointerTo());
+                    llvm::Value* found_next = LLVM::CreateLoad(*builder, llvm_utils->create_gep(found, 1));
+                    prev = builder->CreateBitCast(prev, el_struct_type->getPointerTo());
+                    LLVM::CreateStore(*builder, found_next, llvm_utils->create_gep(prev, 1));
+                    LLVM::CreateStore(*builder, found, found_ptr);
+                }, [&](){
+                    llvm::Value *found = LLVM::CreateLoad(*builder, chain_itr);
+                    llvm::Type* el_struct_type = typecode2elstruct[ASRUtils::get_type_code(el_asr_type)];
+                    found = builder->CreateBitCast(found, el_struct_type->getPointerTo());
+                    LLVM::CreateStore(*builder, found, found_ptr);
+                    LLVM::CreateStore(
+                        *builder,
+                        llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 0)),
+                        llvm_utils->create_ptr_gep(el_mask, LLVM::CreateLoad(*builder, pos))
+                    );
+                    llvm::Value* num_buckets_filled_ptr = get_pointer_to_number_of_filled_buckets(set);
+                    llvm::Value* num_buckets_filled = LLVM::CreateLoad(*builder, num_buckets_filled_ptr);
+                    num_buckets_filled = builder->CreateSub(num_buckets_filled, llvm::ConstantInt::get(
+                                llvm::Type::getInt32Ty(context), llvm::APInt(32, 1)));
+                    LLVM::CreateStore(*builder, num_buckets_filled, num_buckets_filled_ptr);
+                });
+            }, [&]() {
+            });
+            LLVM::CreateStore(*builder, builder->CreateAdd(pos, llvm::ConstantInt::get(
+                    llvm::Type::getInt32Ty(context), llvm::APInt(32, 1))), pos_ptr);
+            builder->CreateCondBr(is_el, loopend, loophead);
+        }
+
+        llvm::Value *el = llvm_utils->create_ptr_gep(LLVM::CreateLoad(*builder, pos_ptr), 0);
+
+        if (LLVM::is_llvm_struct(el_asr_type)) {
+            return el;
+        } else {
+            return LLVM::CreateLoad(*builder, el);
+        }
     }
 
     void LLVMSetLinearProbing::set_deepcopy(
@@ -6823,6 +7347,127 @@ namespace LCompilers {
 
         // end
         llvm_utils->start_new_block(loopend);
+    }
+
+    void LLVMSetLinearProbing::set_clear(llvm::Value* set, llvm::Module* module, ASR::ttype_t* el_asr_type) {
+        set_free(set, module, el_asr_type);
+        set_init(ASRUtils::get_type_code(el_asr_type), set, module, 0);
+    }
+
+    void LLVMSetSeparateChaining::set_clear(llvm::Value* set, llvm::Module* module, ASR::ttype_t* el_asr_type) {
+        set_free(set, module, el_asr_type);
+        set_init_given_initial_capacity(ASRUtils::get_type_code(el_asr_type), set, module, 0);
+    }
+
+    void LLVMSetLinearProbing::set_free(llvm::Value *set, llvm::Module *module,
+        ASR::ttype_t *el_asr_type) {
+        llvm::Value* el_list = get_el_list(set);
+        llvm_utils->list_api->free_data(el_list, el_asr_type, *module);
+        LLVM::lfortran_free(context, *module, *builder, LLVM::CreateLoad(*builder, get_pointer_to_mask(set)));
+    }
+
+    void LLVMSetSeparateChaining::set_free(llvm::Value *set, llvm::Module *module,
+        ASR::ttype_t *el_asr_type) {
+        llvm::Value* el_mask = LLVM::CreateLoad(*builder, get_pointer_to_mask(set));
+        llvm::Value* elems = LLVM::CreateLoad(*builder, get_pointer_to_elems(set));
+        free_data(module, el_asr_type, LLVM::CreateLoad(*builder, get_pointer_to_capacity(set)),
+            el_mask, elems);
+    }
+
+    void LLVMSetSeparateChaining::free_data(llvm::Module *module,
+        ASR::ttype_t* el_asr_type, llvm::Value *capacity,
+        llvm::Value *el_mask, llvm::Value *elems) {
+        get_builder0()
+        llvm::AllocaInst *chain_itr = builder0.CreateAlloca(
+            llvm::Type::getInt8PtrTy(context), nullptr);
+        llvm::AllocaInst *idx_ptr = builder0.CreateAlloca(
+            llvm::Type::getInt32Ty(context), nullptr);
+        LLVM::CreateStore(*builder, llvm::ConstantInt::get(
+            llvm::Type::getInt32Ty(context), llvm::APInt(32, 0)), idx_ptr);
+        llvm::BasicBlock *loophead = llvm::BasicBlock::Create(context, "loop.head");
+        llvm::BasicBlock *loopbody = llvm::BasicBlock::Create(context, "loop.body");
+        llvm::BasicBlock *loopend = llvm::BasicBlock::Create(context, "loop.end");
+
+        // head
+        llvm_utils->start_new_block(loophead);
+        {
+            llvm::Value *cond = builder->CreateICmpSGT(
+                                        capacity,
+                                        LLVM::CreateLoad(*builder, idx_ptr));
+            builder->CreateCondBr(cond, loopbody, loopend);
+        }
+
+        // body
+        llvm_utils->start_new_block(loopbody);
+        {
+            llvm::Value* idx = LLVM::CreateLoad(*builder, idx_ptr);
+            llvm::Value* el_mask_value = LLVM::CreateLoad(*builder,
+                llvm_utils->create_ptr_gep(el_mask, idx));
+            
+            llvm::Value* is_el_set = builder->CreateICmpEQ(el_mask_value,
+                llvm::ConstantInt::get(llvm::Type::getInt8Ty(context), llvm::APInt(8, 1)));
+
+            llvm_utils->create_if_else(is_el_set, [&]() {
+                llvm::Value* el_i = llvm_utils->create_ptr_gep(elems, idx);
+                llvm::Value* el_ll_i8 = builder->CreateBitCast(el_i, llvm::Type::getInt8PtrTy(context));
+                LLVM::CreateStore(*builder, el_ll_i8, chain_itr);
+
+                // See logic for the same in LLVMDictSeparateChaining::free_data
+                llvm::Value* el_struct_i8 = LLVM::CreateLoad(*builder, chain_itr);
+                std::string el_type_code = ASRUtils::get_type_code(el_asr_type);
+                llvm::Type* el_struct_type = typecode2elstruct[el_type_code];
+                llvm::Value* el_struct = builder->CreateBitCast(el_struct_i8, el_struct_type->getPointerTo());
+                llvm::Value* next_el_struct = LLVM::CreateLoad(*builder, llvm_utils->create_gep(el_struct, 1));
+                LLVM::CreateStore(*builder, next_el_struct, chain_itr);
+
+                llvm::BasicBlock *loop2head = llvm::BasicBlock::Create(context, "loop2.head");
+                llvm::BasicBlock *loop2body = llvm::BasicBlock::Create(context, "loop2.body");
+                llvm::BasicBlock *loop2end = llvm::BasicBlock::Create(context, "loop2.end");
+
+                // head
+                llvm_utils->start_new_block(loop2head);
+                {
+                    llvm::Value *cond = builder->CreateICmpNE(
+                        LLVM::CreateLoad(*builder, chain_itr),
+                        llvm::ConstantPointerNull::get(llvm::Type::getInt8PtrTy(context))
+                    );
+                    builder->CreateCondBr(cond, loop2body, loop2end);
+                }
+
+                // body
+                llvm_utils->start_new_block(loop2body);
+                {
+                    llvm::Value* el_struct_i8 = LLVM::CreateLoad(*builder, chain_itr);
+                    std::string el_type_code = ASRUtils::get_type_code(el_asr_type);
+                    llvm::Type* el_struct_type = typecode2elstruct[el_type_code];
+                    llvm::Value* el_struct = builder->CreateBitCast(el_struct_i8, el_struct_type->getPointerTo());
+                    llvm::Value* el_ptr = llvm_utils->create_gep(el_struct, 0);
+                    if( LLVM::is_llvm_struct(el_asr_type) ) {
+                        llvm_utils->free_data(el_ptr, el_asr_type, module);
+                    }
+                    llvm::Value* next_el_struct = LLVM::CreateLoad(*builder, llvm_utils->create_gep(el_struct, 1));
+                    LLVM::CreateStore(*builder, next_el_struct, chain_itr);
+                    LLVM::lfortran_free(context, *module, *builder, el_ptr);
+                }
+
+                builder->CreateBr(loop2head);
+
+                // end
+                llvm_utils->start_new_block(loop2end);
+            }, [=]() {
+            });
+            llvm::Value* tmp = builder->CreateAdd(idx,
+                        llvm::ConstantInt::get(context, llvm::APInt(32, 1)));
+            LLVM::CreateStore(*builder, tmp, idx_ptr);
+        }
+        builder->CreateBr(loophead);
+
+        // end
+        llvm_utils->start_new_block(loopend);
+
+        LLVM::lfortran_free(context, *module, *builder, el_mask);
+        LLVM::lfortran_free(context, *module, *builder, elems);
+        
     }
 
     llvm::Value* LLVMSetInterface::len(llvm::Value* set) {

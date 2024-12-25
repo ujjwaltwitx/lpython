@@ -8,7 +8,7 @@
                         2
                         {
                             A:
-                                (StructType
+                                (Struct
                                     (SymbolTable
                                         3
                                         {
@@ -49,6 +49,7 @@
                                     []
                                     [y
                                     x]
+                                    []
                                     Source
                                     Public
                                     .false.
@@ -108,7 +109,11 @@
                                                     ()
                                                     ()
                                                     Default
-                                                    (Struct
+                                                    (StructType
+                                                        [(Real 4)
+                                                        (Integer 4)]
+                                                        []
+                                                        .true.
                                                         2 A
                                                     )
                                                     ()
@@ -120,7 +125,11 @@
                                         })
                                     change_struct
                                     (FunctionType
-                                        [(Struct
+                                        [(StructType
+                                            [(Real 4)
+                                            (Integer 4)]
+                                            []
+                                            .true.
                                             2 A
                                         )]
                                         ()
@@ -207,7 +216,11 @@
                                                     ()
                                                     ()
                                                     Default
-                                                    (Struct
+                                                    (StructType
+                                                        [(Real 4)
+                                                        (Integer 4)]
+                                                        []
+                                                        .true.
                                                         2 A
                                                     )
                                                     ()
@@ -219,7 +232,11 @@
                                         })
                                     f
                                     (FunctionType
-                                        [(Struct
+                                        [(StructType
+                                            [(Real 4)
+                                            (Integer 4)]
+                                            []
+                                            .true.
                                             2 A
                                         )]
                                         ()
@@ -276,7 +293,11 @@
                                                     ()
                                                     ()
                                                     Default
-                                                    (Struct
+                                                    (StructType
+                                                        [(Real 4)
+                                                        (Integer 4)]
+                                                        []
+                                                        .true.
                                                         2 A
                                                     )
                                                     ()
@@ -306,7 +327,7 @@
                                     []
                                     [(Assignment
                                         (Var 6 x)
-                                        (StructTypeConstructor
+                                        (StructConstructor
                                             2 A
                                             [((Cast
                                                 (RealConstant
@@ -321,7 +342,11 @@
                                                 )
                                             ))
                                             ((IntegerConstant 3 (Integer 4)))]
-                                            (Struct
+                                            (StructType
+                                                [(Real 4)
+                                                (Integer 4)]
+                                                []
+                                                .true.
                                                 2 A
                                             )
                                             ()

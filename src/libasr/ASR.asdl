@@ -15,7 +15,7 @@ symbol
     | GenericProcedure(symbol_table parent_symtab, identifier name, symbol* procs, access access)
     | CustomOperator(symbol_table parent_symtab, identifier name, symbol* procs, access access)
     | ExternalSymbol(symbol_table parent_symtab, identifier name, symbol external, identifier module_name, identifier* scope_names, identifier original_name, access access)
-    | StructType(symbol_table symtab, identifier name, identifier* dependencies, identifier* members, abi abi, access access, bool is_packed, bool is_abstract, call_arg* initializers, expr? alignment, symbol? parent)
+    | Struct(symbol_table symtab, identifier name, identifier* dependencies, identifier* members, identifier* member_functions, abi abi, access access, bool is_packed, bool is_abstract, call_arg* initializers, expr? alignment, symbol? parent)
     | EnumType(symbol_table symtab, identifier name, identifier* dependencies, identifier* members, abi abi, access access, enumtype enum_value_type, ttype type, symbol? parent)
     | UnionType(symbol_table symtab, identifier name, identifier* dependencies, identifier* members, abi abi, access access, call_arg* initializers, symbol? parent)
     | Variable(symbol_table parent_symtab, identifier name, identifier* dependencies, intent intent, expr? symbolic_value, expr? value, storage_type storage, ttype type, symbol? type_declaration, abi abi, access access, presence presence, bool value_attr)
@@ -40,6 +40,7 @@ stmt
     | ErrorStop(expr? code)
     | Exit(identifier? stmt_name)
     | ForAllSingle(do_loop_head head, stmt assign_stmt)
+    | ForEach(expr var, expr container, stmt* body)
     | GoTo(int target_id, identifier name)
     | GoToTarget(int id, identifier name)
     | If(expr test, stmt* body, stmt* orelse)
@@ -74,6 +75,8 @@ stmt
     | ListRemove(expr a, expr ele)
     | ListClear(expr a)
     | DictInsert(expr a, expr key, expr value)
+    | DictClear(expr a)
+    | SetClear(expr a)
     | Expr(expr expression)
 
 expr
@@ -85,7 +88,7 @@ expr
     | IntrinsicArrayFunction(int arr_intrinsic_id, expr* args, int overload_id, ttype? type, expr? value)
     | IntrinsicImpureFunction(int impure_intrinsic_id, expr* args, int overload_id, ttype? type, expr? value)
     | TypeInquiry(int inquiry_id, ttype arg_type, expr? arg, ttype type, expr value)
-    | StructTypeConstructor(symbol dt_sym, call_arg* args, ttype type, expr? value)
+    | StructConstructor(symbol dt_sym, call_arg* args, ttype type, expr? value)
     | EnumTypeConstructor(symbol dt_sym, expr* args, ttype type, expr? value)
     | UnionTypeConstructor(symbol dt_sym, expr* args, ttype type, expr? value)
     | ImpliedDoLoop(expr* values, expr var, expr start, expr end, expr? increment, ttype type, expr? value)
@@ -118,12 +121,14 @@ expr
     | ListConcat(expr left, expr right, ttype type, expr? value)
     | ListCompare(expr left, cmpop op, expr right, ttype type, expr? value)
     | ListCount(expr arg, expr ele, ttype type, expr? value)
+    | ListContains(expr left, expr right, ttype type, expr? value)
     | SetConstant(expr* elements, ttype type)
     | SetLen(expr arg, ttype type, expr? value)
     | TupleConstant(expr* elements, ttype type)
     | TupleLen(expr arg, ttype type, expr value)
     | TupleCompare(expr left, cmpop op, expr right, ttype type, expr? value)
     | TupleConcat(expr left, expr right, ttype type, expr? value)
+    | TupleContains(expr left, expr right, ttype type, expr? value)
     | StringConstant(string s, ttype type)
     | StringConcat(expr left, expr right, ttype type, expr? value)
     | StringRepeat(expr left, expr right, ttype type, expr? value)
@@ -131,6 +136,7 @@ expr
     | StringItem(expr arg, expr idx, ttype type, expr? value)
     | StringSection(expr arg, expr? start, expr? end, expr? step, ttype type, expr? value)
     | StringCompare(expr left, cmpop op, expr right, ttype type, expr? value)
+    | StringContains(expr substr, expr str, ttype type, expr? value)
     | StringOrd(expr arg, ttype type, expr? value)
     | StringChr(expr arg, ttype type, expr? value)
     | StringFormat(expr fmt, expr* args, string_format_kind kind, ttype type, expr? value)
@@ -176,6 +182,8 @@ expr
     | ListRepeat(expr left, expr right, ttype type, expr? value)
     | DictPop(expr a, expr key, ttype type, expr? value)
     | SetPop(expr a, ttype type, expr? value)
+    | SetContains(expr left, expr right, ttype type, expr? value)
+    | DictContains(expr left, expr right, ttype type, expr? value)
     | IntegerBitLen(expr a, ttype type, expr? value)
     | Ichar(expr arg, ttype type, expr? value)
     | Iachar(expr arg, ttype type, expr? value)
@@ -194,7 +202,7 @@ ttype
     | Set(ttype type)
     | List(ttype type)
     | Tuple(ttype* type)
-    | Struct(symbol derived_type)
+    | StructType(ttype* data_member_types, ttype* member_function_types, bool is_cstruct, symbol derived_type)
     | Enum(symbol enum_type)
     | Union(symbol union_type)
     | Class(symbol class_type)
@@ -207,7 +215,7 @@ ttype
     | Array(ttype type, dimension* dims, array_physical_type physical_type)
     | FunctionType(ttype* arg_types, ttype? return_var_type, abi abi, deftype deftype, string? bindc_name, bool elemental, bool pure, bool module, bool inline, bool static, symbol* restrictions, bool is_restriction)
 
-cast_kind = RealToInteger | IntegerToReal | LogicalToReal | RealToReal | IntegerToInteger | RealToComplex | IntegerToComplex | IntegerToLogical | RealToLogical | CharacterToLogical | CharacterToInteger | CharacterToList | ComplexToLogical | ComplexToComplex | ComplexToReal | ComplexToInteger | LogicalToInteger | RealToCharacter | IntegerToCharacter | LogicalToCharacter | UnsignedIntegerToInteger | UnsignedIntegerToUnsignedInteger | UnsignedIntegerToReal | UnsignedIntegerToLogical | IntegerToUnsignedInteger | RealToUnsignedInteger | CPtrToUnsignedInteger | UnsignedIntegerToCPtr | IntegerToSymbolicExpression | ListToArray
+cast_kind = RealToInteger | IntegerToReal | LogicalToReal | RealToReal | IntegerToInteger | RealToComplex | IntegerToComplex | IntegerToLogical | RealToLogical | CharacterToLogical | CharacterToInteger | CharacterToList | ComplexToLogical | ComplexToComplex | ComplexToReal | ComplexToInteger | LogicalToInteger | RealToCharacter | IntegerToCharacter | LogicalToCharacter | UnsignedIntegerToInteger | UnsignedIntegerToUnsignedInteger | UnsignedIntegerToReal | UnsignedIntegerToLogical | IntegerToUnsignedInteger | RealToUnsignedInteger | CPtrToUnsignedInteger | UnsignedIntegerToCPtr | IntegerToSymbolicExpression | ListToArray | DerivedToBase
 storage_type = Default | Save | Parameter
 access = Public | Private
 intent = Local | In | Out | InOut | ReturnVar | Unspecified

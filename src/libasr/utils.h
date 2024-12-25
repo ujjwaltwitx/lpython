@@ -31,6 +31,7 @@ struct PassOptions {
     int default_integer_kind = 4;
 
     std::string run_fun; // for global_stmts pass
+    std::string global_underscore; // for global_stmts pass
     // TODO: Convert to std::filesystem::path (also change find_and_load_module())
     std::string runtime_library_dir;
     bool always_run = false; // for unused_functions pass
@@ -58,6 +59,8 @@ struct PassOptions {
     bool tree = false;
     bool with_intrinsic_mods = false;
     bool c_mangling = false;
+    bool enable_cpython = false;
+    bool c_skip_bindpy_pass = false;
 };
 
 struct CompilerOptions {
@@ -97,7 +100,6 @@ struct CompilerOptions {
     std::string arg_o = "";
     bool emit_debug_info = false;
     bool emit_debug_line_column = false;
-    bool enable_cpython = false;
     bool enable_symengine = false;
     bool link_numpy = false;
     bool run = false;

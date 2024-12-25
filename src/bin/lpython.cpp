@@ -29,6 +29,7 @@
 #include <libasr/config.h>
 #include <libasr/string_utils.h>
 #include <libasr/lsp_interface.h>
+#include <lpython/python_kernel.h>
 #include <lpython/utils.h>
 #include <lpython/python_serialization.h>
 #include <lpython/parser/tokenizer.h>
@@ -320,6 +321,7 @@ int emit_c(const std::string &infile,
     pass_manager.use_default_passes(true);
     compiler_options.po.always_run = true;
     compiler_options.po.run_fun = "f";
+    compiler_options.po.c_skip_bindpy_pass = true;
 
     pass_manager.apply_passes(al, asr, compiler_options.po, diagnostics);
 
@@ -369,6 +371,7 @@ int emit_c_to_file(const std::string &infile, const std::string &outfile,
 
     compiler_options.po.run_fun = "f";
     compiler_options.po.always_run = true;
+    compiler_options.po.c_skip_bindpy_pass = true;
 
     pass_manager.use_default_passes(true);
     pass_manager.apply_passes(al, asr, compiler_options.po, diagnostics);
@@ -798,6 +801,37 @@ int emit_llvm(const std::string &infile,
     return 0;
 }
 
+bool determine_completeness(std::string command)
+{
+    auto get_last_line = [](std::string input) {
+        if(input.length() == 1) {
+            return input;
+        }
+        size_t position = input.length() - 2;
+        while ((!(input[position] == '\n' || input[position] == '\r')) && (position > 0)) {
+            position--;
+        }
+        if(input[position] == '\n' || input[position] == '\r') {
+            position += 1;
+        }
+        return input.substr(position);
+    };
+
+    std::string last_line = get_last_line(command);
+    if ((last_line.rfind("def", 0) == 0) ||
+        (last_line.rfind("for", 0) == 0) ||
+        (last_line.rfind("if", 0) == 0) ||
+        (last_line.rfind("else", 0) == 0) ||
+        (last_line.rfind("elif", 0) == 0) ||
+        (last_line.rfind("class", 0) == 0) ||
+        (last_line.rfind('@', 0) == 0) ||
+        (last_line.rfind(' ', 0) == 0) ||
+        (last_line.rfind('\t', 0) == 0)) {
+            return false;
+    }
+    return true;
+}
+
 int interactive_python_repl(
         LCompilers::PassManager& pass_manager,
         CompilerOptions &compiler_options,
@@ -811,29 +845,29 @@ int interactive_python_repl(
     std::vector<std::pair<std::string, double>> times;
     LCompilers::PythonCompiler::EvalResult r;
 
+    Terminal term(true, false);
+    std::cout << "Interactive LPython. Experimental prototype, not ready for end users." << std::endl;
+    std::string version = LFORTRAN_VERSION;
+    std::cout << "LPython version: " << version << std::endl;
+    std::cout << "  * Use Ctrl-D to exit" << std::endl;
+    std::cout << "  * Use Enter to submit" << std::endl;
+    std::cout << "  * Use Alt-Enter or Ctrl-N to make a new line" << std::endl;
+    std::cout << "    - Editing (Keys: Left, Right, Home, End, Backspace, Delete)" << std::endl;
+    std::cout << "    - History (Keys: Up, Down)" << std::endl;
+
+    std::vector<std::string> history;
+    
+    std::function<bool(std::string)> iscomplete = determine_completeness;
+    
     std::string code_string;
-    std::cout << ">>> ";
     size_t cell_count = 0;
-    for (std::string input; std::getline(std::cin, input);) {
-        if (input == "exit" || input == "quit") {
+    while (true) {
+        std::string code_string = prompt0(term, ">>> ", history, iscomplete);
+        if (code_string.size() == 1 && code_string[0] == CTRL_KEY('d')) {
+            std::cout << std::endl;
+            std::cout << "Exiting." << std::endl;
             return 0;
         }
-
-        if ((input.rfind("def", 0) == 0) ||
-            (input.rfind("for", 0) == 0) ||
-            (input.rfind("if", 0) == 0) ||
-            (input.rfind("else", 0) == 0) ||
-            (input.rfind("elif", 0) == 0) ||
-            (input.rfind("class", 0) == 0) ||
-            (input.rfind('@', 0) == 0) ||
-            (input.rfind(' ', 0) == 0) ||
-            (input.rfind('\t', 0) == 0)) {
-            // start of a block
-            code_string += input + "\n";
-            std::cout << "... ";
-            continue;
-        }
-        code_string += input + "\n";
 
         {
             cell_count++;
@@ -852,12 +886,12 @@ int interactive_python_repl(
             res = fe.evaluate(code_string, verbose, lm, pass_manager, diagnostics);
             if (res.ok) {
                 r = res.result;
+                std::cerr << diagnostics.render(lm, compiler_options);
+                diagnostics.clear();
             } else {
                 LCOMPILERS_ASSERT(diagnostics.has_error())
                 std::cerr << diagnostics.render(lm, compiler_options);
                 diagnostics.clear();
-                code_string = "";
-                std::cout << ">>> ";
                 continue;
             }
 
@@ -872,9 +906,6 @@ int interactive_python_repl(
             get_local_info(d);
             std::cerr << stacktrace2str(d, LCompilers::stacktrace_depth);
             std::cerr << e.name() + ": " << e.msg() << std::endl;
-
-            code_string = "";
-            std::cout << ">>> ";
             continue;
         }
 
@@ -888,40 +919,88 @@ int interactive_python_repl(
         }
 
         switch (r.type) {
+            case (LCompilers::PythonCompiler::EvalResult::integer1) : {
+                if (verbose) std::cout << "Return type: i8" << std::endl;
+                if (verbose) section("Result:");
+                std::cout << r.i32 << std::endl;
+                break;
+            }
+            case (LCompilers::PythonCompiler::EvalResult::integer2) : {
+                if (verbose) std::cout << "Return type: i16" << std::endl;
+                if (verbose) section("Result:");
+                std::cout << r.i64 << std::endl;
+                break;
+            }
             case (LCompilers::PythonCompiler::EvalResult::integer4) : {
-                if (verbose) std::cout << "Return type: integer" << std::endl;
+                if (verbose) std::cout << "Return type: i32" << std::endl;
                 if (verbose) section("Result:");
                 std::cout << r.i32 << std::endl;
                 break;
             }
             case (LCompilers::PythonCompiler::EvalResult::integer8) : {
-                if (verbose) std::cout << "Return type: integer(8)" << std::endl;
+                if (verbose) std::cout << "Return type: i64" << std::endl;
                 if (verbose) section("Result:");
                 std::cout << r.i64 << std::endl;
                 break;
             }
+            case (LCompilers::PythonCompiler::EvalResult::unsignedInteger1) : {
+                if (verbose) std::cout << "Return type: u8" << std::endl;
+                if (verbose) section("Result:");
+                std::cout << r.u32 << std::endl;
+                break;
+            }
+            case (LCompilers::PythonCompiler::EvalResult::unsignedInteger2) : {
+                if (verbose) std::cout << "Return type: u16" << std::endl;
+                if (verbose) section("Result:");
+                std::cout << r.u64 << std::endl;
+                break;
+            }
+            case (LCompilers::PythonCompiler::EvalResult::unsignedInteger4) : {
+                if (verbose) std::cout << "Return type: u32" << std::endl;
+                if (verbose) section("Result:");
+                std::cout << r.u32 << std::endl;
+                break;
+            }
+            case (LCompilers::PythonCompiler::EvalResult::unsignedInteger8) : {
+                if (verbose) std::cout << "Return type: u64" << std::endl;
+                if (verbose) section("Result:");
+                std::cout << r.u64 << std::endl;
+                break;
+            }
             case (LCompilers::PythonCompiler::EvalResult::real4) : {
-                if (verbose) std::cout << "Return type: real" << std::endl;
+                if (verbose) std::cout << "Return type: f32" << std::endl;
                 if (verbose) section("Result:");
                 std::cout << std::setprecision(8) << r.f32 << std::endl;
                 break;
             }
             case (LCompilers::PythonCompiler::EvalResult::real8) : {
-                if (verbose) std::cout << "Return type: real(8)" << std::endl;
+                if (verbose) std::cout << "Return type: f64" << std::endl;
                 if (verbose) section("Result:");
                 std::cout << std::setprecision(17) << r.f64 << std::endl;
                 break;
             }
             case (LCompilers::PythonCompiler::EvalResult::complex4) : {
-                if (verbose) std::cout << "Return type: complex" << std::endl;
+                if (verbose) std::cout << "Return type: c32" << std::endl;
                 if (verbose) section("Result:");
                 std::cout << std::setprecision(8) << "(" << r.c32.re << ", " << r.c32.im << ")" << std::endl;
                 break;
             }
             case (LCompilers::PythonCompiler::EvalResult::complex8) : {
-                if (verbose) std::cout << "Return type: complex(8)" << std::endl;
+                if (verbose) std::cout << "Return type: c64" << std::endl;
                 if (verbose) section("Result:");
                 std::cout << std::setprecision(17) << "(" << r.c64.re << ", " << r.c64.im << ")" << std::endl;
+                break;
+            }
+            case (LCompilers::PythonCompiler::EvalResult::boolean) : {
+                if (verbose) std::cout << "Return type: logical" << std::endl;
+                if (verbose) section("Result:");
+                std::cout << (r.b ? "True" : "False") << std::endl;
+                break;
+            }
+            case (LCompilers::PythonCompiler::EvalResult::string) : {
+                if (verbose) std::cout << "Return type: str" << std::endl;
+                if (verbose) section("Result:");
+                std::cout << (r.str == nullptr ? "" : r.str) << std::endl;
                 break;
             }
             case (LCompilers::PythonCompiler::EvalResult::statement) : {
@@ -930,6 +1009,16 @@ int interactive_python_repl(
                     section("Result:");
                     std::cout << "(statement)" << std::endl;
                 }
+                break;
+            }
+            case (LCompilers::PythonCompiler::EvalResult::struct_type) : {
+                if (verbose) {
+                    std::cout << "Return type: " 
+                        << LCompilers::ASRUtils::get_type_code(r.structure.ttype) 
+                        << std::endl;
+                }
+                if (verbose) section("Result:");
+                std::cout << fe.aggregate_type_to_string(r) << std::endl;
                 break;
             }
             case (LCompilers::PythonCompiler::EvalResult::none) : {
@@ -942,9 +1031,6 @@ int interactive_python_repl(
             }
             default : throw LCompilers::LCompilersException("Return type not supported");
         }
-
-        code_string = "";
-        std::cout << ">>> ";
     }
     return 0;
 }
@@ -1048,7 +1134,7 @@ int compile_python_using_llvm(
         LCompilers::LPython::DynamicLibrary cpython_lib;
         LCompilers::LPython::DynamicLibrary symengine_lib;
 
-        if (compiler_options.enable_cpython) {
+        if (compiler_options.po.enable_cpython) {
             LCompilers::LPython::open_cpython_library(cpython_lib);
         }
         if (compiler_options.enable_symengine) {
@@ -1064,10 +1150,10 @@ int compile_python_using_llvm(
 
         e.add_module(std::move(m));
         if (call_stmts) {
-            e.voidfn("__module___main_____main__global_stmts");
+            e.execfn<void>("__module___main_____main__global_stmts");
         }
 
-        if (compiler_options.enable_cpython) {
+        if (compiler_options.po.enable_cpython) {
             LCompilers::LPython::close_cpython_library(cpython_lib);
         }
         if (compiler_options.enable_symengine) {
@@ -1451,7 +1537,7 @@ int link_executable(const std::vector<std::string> &infiles,
                 cmd += " -L$CONDA_PREFIX/lib -Wl,-rpath -Wl,$CONDA_PREFIX/lib -lsymengine";
             }
 
-            if (compiler_options.enable_cpython) {
+            if (compiler_options.po.enable_cpython) {
                 std::string py_version = "3.10";
                 std::string py_flags = R"(-I $CONDA_PREFIX/include/python)" + py_version + R"( -L$CONDA_PREFIX/lib -Wl,-rpath -Wl,$CONDA_PREFIX/lib -lpython)" + py_version + R"()";
                 if (compiler_options.link_numpy) {
@@ -1510,7 +1596,7 @@ int link_executable(const std::vector<std::string> &infiles,
         if (compiler_options.enable_symengine) {
             cmd += " -L$CONDA_PREFIX/lib -Wl,-rpath -Wl,$CONDA_PREFIX/lib -lsymengine";
         }
-        if (compiler_options.enable_cpython) {
+        if (compiler_options.po.enable_cpython) {
             std::string py_version = "3.10";
             std::string py_flags = R"(-I $CONDA_PREFIX/include/python)" + py_version + R"( -L$CONDA_PREFIX/lib -Wl,-rpath -Wl,$CONDA_PREFIX/lib -lpython)" + py_version + R"()";
             if (compiler_options.link_numpy) {
@@ -1837,7 +1923,7 @@ int main(int argc, char *argv[])
         app.add_flag("--dump-all-passes", compiler_options.po.dump_all_passes, "Apply all the passes and dump the ASR into a file");
         app.add_flag("--dump-all-passes-fortran", compiler_options.po.dump_fortran, "Apply all passes and dump the ASR after each pass into fortran file");
         app.add_flag("--cumulative", compiler_options.po.pass_cumulative, "Apply all the passes cumulatively till the given pass");
-        app.add_flag("--enable-cpython", compiler_options.enable_cpython, "Enable CPython runtime");
+        app.add_flag("--enable-cpython", compiler_options.po.enable_cpython, "Enable CPython runtime");
         app.add_flag("--enable-symengine", compiler_options.enable_symengine, "Enable Symengine runtime");
         app.add_flag("--link-numpy", compiler_options.link_numpy, "Enable NumPy runtime (implies --enable-cpython)");
         app.add_flag("--separate-compilation", separate_compilation, "Generates unique names for all the symbols");
@@ -1899,7 +1985,7 @@ int main(int argc, char *argv[])
         }
 
         if (compiler_options.link_numpy) {
-            compiler_options.enable_cpython = true;
+            compiler_options.po.enable_cpython = true;
         }
 
         if (arg_version) {
@@ -1941,8 +2027,12 @@ int main(int argc, char *argv[])
         // }
 
         if (kernel) {
-            std::cerr << "The kernel subcommand is not implemented yet for LPython." << std::endl;
-            return 1;
+#ifdef HAVE_LFORTRAN_XEUS
+        return LCompilers::LPython::run_kernel(arg_kernel_f);
+#else
+        std::cerr << "The kernel subcommand requires LFortran to be compiled with XEUS support. Recompile with `WITH_XEUS=yes`." << std::endl;
+        return 1;
+#endif
         }
 
         // if (mod) {

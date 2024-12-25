@@ -18,7 +18,9 @@ namespace llvm {
     class LLVMContext;
     class Module;
     class Function;
+    class GlobalVariable;
     class TargetMachine;
+    class DataLayout;
     namespace orc {
         class KaleidoscopeJIT;
     }
@@ -35,6 +37,8 @@ public:
     std::string str();
     // Return a function return type as a string (real / integer)
     std::string get_return_type(const std::string &fn_name);
+    llvm::Function *get_function(const std::string &fn_name);
+    llvm::GlobalVariable *get_global(const std::string &global_name);
 };
 
 class LLVMEvaluator
@@ -52,14 +56,6 @@ public:
     void add_module(std::unique_ptr<llvm::Module> mod);
     void add_module(std::unique_ptr<LLVMModule> m);
     intptr_t get_symbol_address(const std::string &name);
-    int32_t int32fn(const std::string &name);
-    int64_t int64fn(const std::string &name);
-    bool boolfn(const std::string &name);
-    float floatfn(const std::string &name);
-    double doublefn(const std::string &name);
-    std::complex<float> complex4fn(const std::string &name);
-    std::complex<double> complex8fn(const std::string &name);
-    void voidfn(const std::string &name);
     std::string get_asm(llvm::Module &m);
     void save_asm_file(llvm::Module &m, const std::string &filename);
     void save_object_file(llvm::Module &m, const std::string &filename);
@@ -68,8 +64,16 @@ public:
     static std::string module_to_string(llvm::Module &m);
     static void print_version_message();
     llvm::LLVMContext &get_context();
+    const llvm::DataLayout &get_jit_data_layout();
     static void print_targets();
     static std::string get_default_target_triple();
+
+    template<class T>
+    T execfn(const std::string &name) {
+        intptr_t addr = get_symbol_address(name);
+        T (*f)() = (T (*)())addr;
+        return f();
+    }
 };
 
 

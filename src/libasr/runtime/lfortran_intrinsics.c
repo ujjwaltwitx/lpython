@@ -1972,6 +1972,10 @@ LFORTRAN_API void _lfortran_strcpy(char** x, char *y, int8_t free_target)
         // *x = (char*) malloc((strlen(y) + 1) * sizeof(char));
         // _lfortran_string_init(strlen(y) + 1, *x);
     }
+    if (y == NULL) {
+        *x = NULL;
+        return;
+    }
     // if( *x == NULL ) {
         *x = (char*) malloc((strlen(y) + 1) * sizeof(char));
         _lfortran_string_init(strlen(y) + 1, *x);
@@ -2191,6 +2195,12 @@ LFORTRAN_API char* _lfortran_str_item(char* s, int32_t idx) {
     res[0] = s[idx-1];
     res[1] = '\0';
     return res;
+}
+
+/// Find a substring in a string
+LFORTRAN_API bool _lfortran_str_contains(char* str, char* substr) {
+    char* res = strstr(str, substr);
+    return res != NULL;
 }
 
 // idx1 and idx2 both start from 1

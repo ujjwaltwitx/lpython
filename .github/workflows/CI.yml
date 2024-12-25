@@ -35,29 +35,28 @@ jobs:
           key:
             ${{ runner.os }}-conda-${{ env.CACHE_NUMBER }}-${{ hashFiles('ci/environment.yml') }}
 
-      - uses: conda-incubator/setup-miniconda@v2
+      - uses: mamba-org/setup-micromamba@v1.9.0
         with:
-          miniconda-version: "latest"
-          auto-update-conda: true
           environment-file: ci/environment.yml
-          python-version: ${{ matrix.python-version }}
-          use-only-tar-bz2: true
+          create-args: >-
+            python=${{ matrix.python-version }}
+            cmake=3.30.0
 
       - name: Install Windows Conda Packages
         if: contains(matrix.os, 'windows')
         shell: bash -e -l {0}
-        run: conda install m2-bison=3.0.4 cmake=3.21.1
+        run: micromamba install --freeze-installed m2-bison=3.0.4 m2-filesystem
 
       - name: Install Linux / macOS Conda Packages
         if: contains(matrix.os, 'ubuntu') || contains(matrix.os, 'macos')
         shell: bash -e -l {0}
-        run: conda install bison=3.4 nodejs=18
+        run: micromamba install --freeze-installed bison=3.4 nodejs=18
 
       - name: Conda info
         shell: bash -e -l {0}
         run: |
-            conda info
-            conda list
+            micromamba info
+            micromamba list
 
       - name: Setup Platform (Linux)
         if: contains(matrix.os, 'ubuntu')
@@ -87,9 +86,9 @@ jobs:
         if: contains(matrix.os, 'windows')
         shell: cmd
         run: |
-            set CONDA_INSTALL_LOCN=C:\\Miniconda3
-            call %CONDA_INSTALL_LOCN%\Scripts\activate.bat
-            call conda activate test
+            set MAMBA_INSTALL_LOCN=C:\\Users\runneradmin\micromamba
+            call %MAMBA_INSTALL_LOCN%\Scripts\activate.bat
+            call micromamba activate lp
             set LFORTRAN_CMAKE_GENERATOR=Ninja
             set WIN=1
             set MACOS=0
@@ -107,9 +106,9 @@ jobs:
         if: contains(matrix.os, 'windows')
         shell: cmd
         run: |
-            set CONDA_INSTALL_LOCN=C:\\Miniconda3
-            call %CONDA_INSTALL_LOCN%\Scripts\activate.bat
-            call conda activate test
+            set MAMBA_INSTALL_LOCN=C:\\Users\runneradmin\micromamba
+            call %MAMBA_INSTALL_LOCN%\Scripts\activate.bat
+            call micromamba activate lp
             set LFORTRAN_CMAKE_GENERATOR=Ninja
             set WIN=1
             set MACOS=0
@@ -403,7 +402,7 @@ jobs:
           create-args: >-
             python=3.10
             bison=3.4
-            symengine=0.11.1
+            symengine=0.12.0
             sympy=1.11.1
 
       - uses: hendrikmuhs/ccache-action@main
@@ -455,12 +454,12 @@ jobs:
           create-args: >-
             llvmdev=11.1.0
             bison=3.4
-            re2c
-            zlib
-            cmake
-            make
+            re2c=2.2
+            zlib=1.3.1
+            cmake=3.30.0
+            make=4.3
             python=${{ matrix.python-version }}
-            numpy
+            numpy=1.26.4
 
       - uses: hendrikmuhs/ccache-action@main
         with:
@@ -496,6 +495,97 @@ jobs:
         run: |
             cd integration_tests
             ./run_tests.py -b cpython c_py
+
+  test_llvm:
+    name: Test LLVM ${{ matrix.llvm-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        llvm-version: ["10", "15", "16"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: mamba-org/setup-micromamba@v1.8.0
+        with:
+          environment-file: ci/environment_linux_llvm.yml
+          create-args: >-
+            llvmdev=${{ matrix.llvm-version }}
+
+      - uses: hendrikmuhs/ccache-action@main
+        with:
+          variant: sccache
+          key: ${{ github.job }}-${{ matrix.llvm-version }}
+
+      - name: Build Linux
+        shell: bash -e -l {0}
+        run: |
+            ./build0.sh
+            export CXXFLAGS="-Werror"
+            cmake . -G"Unix Makefiles" \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DWITH_LLVM=yes \
+              -DLFORTRAN_BUILD_ALL=yes \
+              -DWITH_STACKTRACE=no \
+              -DWITH_RUNTIME_STACKTRACE=yes \
+              -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
+              -DCMAKE_INSTALL_PREFIX=`pwd`/inst \
+              -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+              -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+            cmake --build . -j16 --target install
+
+      - name: Test Linux LLVM ${{ matrix.llvm-version }}
+        shell: bash -e -l {0}
+        run: |
+            ctest --output-on-failure
+            cd integration_tests
+            ./run_tests.py -b llvm llvm_jit
+            ./run_tests.py -b llvm llvm_jit -f
+
+  build_jupyter_kernel:
+    name: Build Jupyter Kernel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - uses: mamba-org/setup-micromamba@v1
+        with:
+          environment-file: ci/environment.yml
+          create-args: >-
+            jupyter=1.0.0
+            python=3.10
+            bison=3.4
+
+      - uses: hendrikmuhs/ccache-action@main
+        with:
+          variant: sccache
+          key: ${{ github.job }}-${{ matrix.os }}
+
+      - name: Build LPython with Kernel
+        shell: bash -e -l {0}
+        run: |
+            ./build0.sh
+            export CXXFLAGS="-Werror"
+            cmake . -GNinja \
+              -DCMAKE_BUILD_TYPE=Debug \
+              -DWITH_LLVM=yes \
+              -DWITH_XEUS=yes \
+              -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
+              -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX"
+
+            ninja install
+            ctest --output-on-failure
+            jupyter kernelspec list --json
+
+      - name: Test Kernel
+        shell: bash -e -l {0}
+        run: |
+            ctest --output-on-failure
 
   upload_tarball:
     name: Upload Tarball
